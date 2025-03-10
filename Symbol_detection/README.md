@@ -1,3 +1,5 @@
+symbol_detection_ros.py 실행 (모델 경로, 이미지 토픽 수정 필요!!!)
+
 Name: ultralytics
 Version: 8.3.74
 
