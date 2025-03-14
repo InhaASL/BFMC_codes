@@ -1,5 +1,8 @@
 symbol_detection_ros.py 실행 (모델 경로, 이미지 토픽 수정 필요!!!)
 ____________________________________________________________
+names: {0: 'Car', 1: 'CrossWalk', 2: 'Greenlight', 3: 'HighwayEnd', 4: 'HighwayEntry', 5: 'NoEntry', 6: 'OneWay', 7: 'Parking', 8: 'Pedestrian', 9: 'PriorityRoad', 10: 'Redlight', 11: 'Roundabout', 12: 'Stop', 13: 'Yellowlight'}
+
+____________________________________________________________
 Name: ultralytics
 Version: 8.3.74
 
