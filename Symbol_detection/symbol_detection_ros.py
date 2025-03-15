@@ -13,6 +13,10 @@ from std_msgs.msg import String
 
 class Symbol_detection():
     def __init__(self):
+
+        # 프레임 지정
+        self.frame_interval = 10
+        self.frame_count = 0
         logging.getLogger("ultralytics").setLevel(logging.ERROR)
 
         rospy.init_node('symbol_detect_node')
@@ -24,9 +28,7 @@ class Symbol_detection():
         self.conf_threshold = 0.5
         self.iou_threshold = 0.45
 
-        # 프레임 지정
-        self.frame_interval = 10
-        self.frame_count = 0
+        
 
     def image_callback(self, msg):
         try:
