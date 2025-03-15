@@ -13,7 +13,7 @@ class LaneFollow:
         self.br = CvBridge()
         self.image_sub = rospy.Subscriber('/oak/rgb/image_rect', Image, self.image_callback)
         # self.image_sub = rospy.Subscriber('/usb_cam/image_rect_color/compressed', CompressedImage, self.image_callback)
-        self.ack_pub = rospy.Publisher('/high_level/ackermann_cmd_mux/input/nav_0', AckermannDriveStamped, queue_size=10)
+        self.ack_pub = rospy.Publisher('/high_level/ackermann_cmd_mux/input/navigation', AckermannDriveStamped, queue_size=10)
         self.debug_publisher1 = rospy.Publisher('/debugging_image1', Image, queue_size=10)
         self.debug_publisher2 = rospy.Publisher('/debugging_image2', Image, queue_size=10)
 
@@ -28,7 +28,6 @@ class LaneFollow:
         self.white_lane_high = np.array([180, 40, 250]) # Hue 범위 확대
         self.brightness_threshold = 240  # 반사광 제거를 위한 밝기 임계값
         self.min_contour_area = 5000     # 최소 컨투어 영역
-        self.max_contour_area = 1000000    # 최대 컨투어 영역
         self.min_line_length = 40       # 최소 선 길이
         self.max_line_width = 30        # 최대 선 너비
         self.min_aspect_ratio = 2.5     # 최소 종횡비
@@ -132,7 +131,7 @@ class LaneFollow:
 
     def calculate_guiding_position(self, guide_center, accel_flag):
         """조향각 계산 및 제어"""
-        dy = guide_center - 640
+        dy = guide_center - self.img_center
         dx = self.roi_.shape[0] + 300
         theta_rad = np.arctan2(dy, dx)
         
@@ -142,7 +141,7 @@ class LaneFollow:
             prev_avg = sum(self.prev_centers) / len(self.prev_centers)
             if abs(guide_center - prev_avg) > max_center_change:
                 guide_center = prev_avg + np.sign(guide_center - prev_avg) * max_center_change
-                theta_rad = np.arctan2(guide_center - 640, dx)
+                theta_rad = np.arctan2(guide_center - self.img_center, dx)
         
         self.prev_centers.append(guide_center)
         if len(self.prev_centers) > self.center_history_size:
@@ -152,8 +151,8 @@ class LaneFollow:
         msg.header.stamp = rospy.Time.now()
         msg.header.frame_id = "base_link"
         msg.drive.steering_angle = -theta_rad
+        print(np.rad2deg(theta_rad))
         msg.drive.speed = 1.0 if accel_flag else 2.0
-        
         self.ack_pub.publish(msg)
 
     def run(self, deaccel_flag=1):
@@ -186,7 +185,7 @@ class LaneFollow:
         # 차선 분류
         left_lines = []
         right_lines = []
-        img_center = self.roi_.shape[1] // 2
+        self.img_center = self.roi_.shape[1] // 2
 
         for contour in filtered_contours:
             [vx, vy, x0, y0] = cv2.fitLine(contour, cv2.DIST_L2, 0, 0.01, 0.01)
@@ -203,7 +202,7 @@ class LaneFollow:
             bottomx = int((bottomy - y0) * vx / vy + x0)
             centerx = (topx + bottomx) // 2
                 
-            if bottomx < img_center:
+            if bottomx < self.img_center:
                 left_lines.append(centerx)
             else:
                 right_lines.append(centerx)
@@ -232,8 +231,8 @@ class LaneFollow:
             
         if len(left_lines) + len(right_lines) == 0:
             # 이전 프레임의 중심점 유지하되 약간의 보정
-            if abs(self.current_center - img_center) > 50:  # 중앙에서 많이 벗어난 경우
-                self.current_center = int(0.8 * self.current_center + 0.2 * img_center)  # 중앙으로 천천히 복귀
+            if abs(self.current_center - self.img_center) > 50:  # 중앙에서 많이 벗어난 경우
+                self.current_center = int(0.8 * self.current_center + 0.2 * self.img_center)  # 중앙으로 천천히 복귀
 
             
         if guide_center is not None:
