@@ -26,8 +26,8 @@ class Symbol_detection():
         self.bridge = CvBridge()
 
         self.model = YOLO("/home/tony/yolo/yolo/demo_model.pt")
-        self.conf_threshold = 0.5
-        self.iou_threshold = 0.1
+        self.conf_threshold = 0.7
+        self.iou_threshold = 0.4
 
     def image_callback(self, msg):
         try:
@@ -73,7 +73,7 @@ class Symbol_detection():
                     "class": class_name,
                     "area": round(area, 2)
                 }
-                print(f"Detected: {class_name}, Area: {area:.2f}")
+                print(f"Detected: {class_name}, Confidence: {confidence:.2f} ,Area: {area:.2f}")
                 detections.append(detection)
             self.symbol_pub.publish(json.dumps(detections))
         else:
