@@ -7,29 +7,32 @@ import logging
 import json
 
 import rospy
-from sensor_msgs.msg import CompressedImage, Image
+from sensor_msgs.msg import Image
 from std_msgs.msg import String
 
 class Symbol_detection():
     def __init__(self):
         logging.getLogger("ultralytics").setLevel(logging.ERROR)
 
+        # 프레임 지정
+        self.frame_interval = 2
+        self.frame_count = 0
+
         rospy.init_node('symbol_detect_node')
-        self.image_sub = rospy.Subscriber('/image_raw', CompressedImage, self.image_callback)
+        self.image_sub = rospy.Subscriber('/oak/rgb/image_rect', Image, self.image_callback)
         self.symbol_pub = rospy.Publisher('/detected_symbol', String, queue_size=10)
+        # debug 이미지를 publish할 토픽 생성
+        self.debug_pub = rospy.Publisher('/debug', Image, queue_size=10)
         self.bridge = CvBridge()
 
         self.model = YOLO("/home/tony/yolo/yolo/demo_model.pt")
         self.conf_threshold = 0.5
-        self.iou_threshold = 0.45
-
-        # 프레임 지정
-        self.frame_interval = 10
-        self.frame_count = 0
+        self.iou_threshold = 0.1
 
     def image_callback(self, msg):
         try:
-            frame = self.bridge.compressed_imgmsg_to_cv2(msg, desired_encoding="bgr8")
+            # rosbag에서 발행되는 sensor_msgs/Image이면 imgmsg_to_cv2 사용
+            frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
         except Exception as e:
             rospy.logerr("이미지 변환 실패: %s", e)
             return
@@ -46,10 +49,14 @@ class Symbol_detection():
 
             boxes = results[0].boxes
             self.flag_callback(boxes, results)
-            cv2.imshow("YOLO Live Detection", annotated_frame)
+
+            # 후처리된 annotated_frame를 ROS 이미지 메시지로 변환 후 debug 토픽으로 publish
+            debug_msg = self.bridge.cv2_to_imgmsg(annotated_frame, encoding="bgr8")
+            self.debug_pub.publish(debug_msg)
         else:
-            cv2.imshow("YOLO Live Detection", frame)
-        cv2.waitKey(1)
+            pass    
+
+            
 
     def flag_callback(self, boxes, results):
         detections = []  
@@ -60,13 +67,13 @@ class Symbol_detection():
                 class_name = results[0].names[class_id]
                 xyxy = box.xyxy[0]
                 width = float(xyxy[2] - xyxy[0])
-
-                # 각 검출 결과를 딕셔너리로 저장
+                height = float(xyxy[3] - xyxy[1])
+                area = width * height 
                 detection = {
                     "class": class_name,
-                    "width": round(width, 2)
+                    "area": round(area, 2)
                 }
-                print(f"Detected: {class_name}, width: {width:.2f}")
+                print(f"Detected: {class_name}, Area: {area:.2f}")
                 detections.append(detection)
             self.symbol_pub.publish(json.dumps(detections))
         else:
