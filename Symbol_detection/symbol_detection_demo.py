@@ -72,6 +72,7 @@ class Symbol_detection():
         else:
             print("Nothing detected!")
             self.symbol_pub.publish(json.dumps([]))
+        print("--------------------------------")
 
 if __name__ == '__main__':
     try:
