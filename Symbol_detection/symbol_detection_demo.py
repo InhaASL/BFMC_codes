@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import cv2
 from ultralytics import YOLO
 from cv_bridge import CvBridge
 import logging
@@ -73,7 +72,7 @@ class Symbol_detection():
                     "class": class_name,
                     "area": round(area, 2)
                 }
-                print(f"Detected: {class_name}, Confidence: {confidence:.2f} ,Area: {area:.2f}")
+                print(f"Detected: {class_name}, Confidence: {confidence:.2f}, Area: {area:.2f}")
                 detections.append(detection)
             self.symbol_pub.publish(json.dumps(detections))
         else:
