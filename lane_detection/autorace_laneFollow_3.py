@@ -25,13 +25,13 @@ class LaneFollow:
 
         # 차선 검출 파라미터
         self.white_lane_low = np.array([0, 0, 180])  # Saturation 낮추고, Value 상향
-        self.white_lane_high = np.array([180, 45, 210]) # Hue 범위 확대
+        self.white_lane_high = np.array([180, 45, 220]) # Hue 범위 확대
         self.brightness_threshold = 240  # 반사광 제거를 위한 밝기 임계값
-        self.min_contour_area = 2000     # 최소 컨투어 영역
-        self.min_line_length = 30      # 최소 선 길이
-        self.max_line_width = 100        # 최대 선 너비
+        self.min_contour_area = 4000     # 최소 컨투어 영역
+        self.min_line_length = 50      # 최소 선 길이
+        self.max_line_width = 80        # 최대 선 너비
         self.min_aspect_ratio = 2.5   # 최소 종횡비
-        self.max_roughness = 1.03
+        self.max_roughness = 1.02
 
         # 주행 관련 변수
         self.current_center = 640
@@ -42,7 +42,7 @@ class LaneFollow:
         
         # 디버깅
         self.debug_sequence = rospy.get_param('~debug_image_num', 1)
-        self.kernel = np.ones((3, 3), np.uint8)
+        self.kernel = np.ones((12, 12), np.uint8)
         
         # 원근 변환 매트릭스
         self.src_points = np.float32([
@@ -55,8 +55,8 @@ class LaneFollow:
         self.dst_points = np.float32([
             [self.roi_x_l, self.roi_y_l],
             [self.roi_x_h, self.roi_y_l],
-            [self.roi_x_l + 360, self.roi_y_h],
-            [self.roi_x_h - 360, self.roi_y_h]
+            [self.roi_x_l + 350, self.roi_y_h],
+            [self.roi_x_h - 350, self.roi_y_h]
         ])
 
         self.matrix = cv2.getPerspectiveTransform(self.src_points, self.dst_points)
@@ -77,10 +77,6 @@ class LaneFollow:
 
         # 반사광 영역 마스크 생성
         reflection_mask = v > 220  # 매우 밝은 영역을 반사광으로 간주
-        
-        # 반사광 영역의 채도(S) 높이기 (노란색 차선은 채도가 높음)
-        # s[reflection_mask] = s[reflection_mask] * 1.2   #1.5
-        # s = np.clip(s, 0, 255).astype(np.uint8)
         
         # 반사광 영역의 밝기(V) 감소
         v[reflection_mask] = v[reflection_mask] * 0.75   #0.5
@@ -176,12 +172,12 @@ class LaneFollow:
         hsv = cv2.cvtColor(self.roi_, cv2.COLOR_BGR2HSV)
         self.mask_white = cv2.inRange(hsv, self.white_lane_low, self.white_lane_high)
         
-        
+        self.mask_white = cv2.Canny(self.mask_white, 50, 255)
         # run 함수 내에서
         # HSV 변환 및 마스킹 후
-        self.mask_white = cv2.morphologyEx(self.mask_white, cv2.MORPH_CLOSE, self.kernel, iterations=2)
+        self.mask_white = cv2.morphologyEx(self.mask_white, cv2.MORPH_CLOSE, self.kernel, iterations=4)
         self.mask_white = cv2.morphologyEx(self.mask_white, cv2.MORPH_OPEN, self.kernel)
-        self.mask_white = cv2.dilate(self.mask_white, self.kernel, iterations=1)  # 차선 두께 강화
+        # self.mask_white = cv2.dilate(self.mask_white, self.kernel, iterations=1)  # 차선 두께 강화
 
         # 컨투어 검출 및 필터링
         contours, _ = cv2.findContours(self.mask_white, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_TC89_L1)
