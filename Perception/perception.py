@@ -7,40 +7,19 @@ from sklearn.cluster import DBSCAN
 from cv_bridge import CvBridge
 from sensor_msgs.msg import CompressedImage, Image, LaserScan
 from std_msgs.msg import String
-from ar_track_alvar_msgs.msg import AlvarMarkers
+import json
 
 
 class perception:
     def __init__(self):
         rospy.init_node('perception')
-        self.br = CvBridge()
         
         # Subscribers and Publishers
-        self.image_sub = rospy.Subscriber('/usb_cam/image_rect_color/compressed', CompressedImage, self.image_callback)
-        self.scan_pub = rospy.Subscriber('/scan', LaserScan, self.scan_callback)
-        self.ar_sub = rospy.Subscriber('/ar_pose_marker', AlvarMarkers, self.marker_callback)
+        rospy.Subscriber("/detected_symbol", String, self.detected_symbol_callback)
+        rospy.Subscriber('/scan', LaserScan, self.scan_callback)
+        rospy.Subscriber('/stop_line', bool, self.stop_line_callback)
         self.mission_flag_pub = rospy.Publisher('/mission_flag', String, queue_size=5)
         self.debug_publisher1 = rospy.Publisher('/debug_image1', Image, queue_size=10)
-        
-        # ROI and Perspective Transformation Parameters
-        self.roi_x_l = rospy.get_param('~roi_x_l', 0)
-        self.roi_x_h = rospy.get_param('~roi_x_h', 640)
-        self.roi_y_l = rospy.get_param('~roi_y_l', 290)
-        self.roi_y_h = rospy.get_param('~roi_y_h', 480)
-
-        self.src_points = np.float32([
-            [self.roi_x_l, self.roi_y_l],
-            [self.roi_x_h, self.roi_y_l],
-            [self.roi_x_l, self.roi_y_h],
-            [self.roi_x_h, self.roi_y_h]
-        ])
-        self.dst_points = np.float32([
-            [self.roi_x_l, self.roi_y_l],
-            [self.roi_x_h, self.roi_y_l],
-            [self.roi_x_l + 220, self.roi_y_h],
-            [self.roi_x_h - 220, self.roi_y_h]
-        ])
-        self.matrix = cv2.getPerspectiveTransform(self.src_points, self.dst_points)
         
         # Obstacle and Line Detection Parameters
         self.obstacle_flag = False
@@ -50,20 +29,6 @@ class perception:
         self.cooldown = 10
         self.last_count_time = 0
         self.mask = None
-
-        # WHITE HSV RANGE
-        self.lower_white= np.array([0, 0, 160])
-        self.upper_white = np.array([180, 80, 255])
-
-        # YELLOW HSV RANGE
-        self.yellow_lane_low = np.array([20, 150, 0])  
-        self.yellow_lane_high = np.array([40, 255, 175]) 
-
-        # RED HSV RANGE
-        self.lower_red1 = np.array([0, 10, 20])
-        self.upper_red1 = np.array([10, 255, 255])
-        self.lower_red2 = np.array([160, 10, 20 ])
-        self.upper_red2 = np.array([180, 255, 255])
 
         self.kidzone_flag = False
         self.cur_kidzone  = False
@@ -80,12 +45,18 @@ class perception:
 
         rospy.loginfo(f"CUR_Mission : {self.cur_mission} / Obstacle Flag : {self.obstacle_flag} / Current Line Check : {self.line_cnt} / Current Kids-Zone Flag : {self.kidzone_flag}")
 
-    def marker_callback(self, data):
-        if data.markers:
-        # if self.cur_mission == 5 and data.markers:
-            self.current_marker_id = data.markers[0].id
-            rospy.loginfo(f"Detected AR Marker ID: {self.current_marker_id}")
-            self.pub_flag = True
+    def detected_symbol_callback(self, msg):
+        try:
+            detections = json.loads(msg.data)
+        except json.JSONDecodeError as e:
+            rospy.logerr("JSON 파싱 오류: %s", e)
+            return
+
+        # 파싱된 리스트를 순회하며 각 검출 결과 출력
+        for detection in detections:
+            class_name = detection.get("class", "Unknown")
+            width = detection.get("area", 0.0)
+            rospy.loginfo(f"Detected: {class_name}, Area: {width}")
 
     def scan_callback(self, data):
         angles = np.linspace(data.angle_min, data.angle_max, len(data.ranges))
@@ -181,10 +152,6 @@ class perception:
         valid_angles = (angle <= angle_min) | (angle >= angle_max)  
         close_objects = range <= 0.7
         desired_ranges = range[valid_angles & close_objects]
-        if len(desired_ranges) > 2:
-            self.obstacle_flag = True
-            self.pub_flag = True
-            rospy.loginfo("Crossing Gate detected!")
 
     def check_parking(self, range, angle):
         angle_min = -math.radians(91)
@@ -259,61 +226,6 @@ class perception:
 
         return mask
     
-    
-    def check_roundabouts(self, img):
-        # 이미지 HSV 변환 및 노란색 마스크 생성
-        hsv_image = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-        mask = cv2.inRange(hsv_image, self.yellow_lane_low, self.yellow_lane_high)
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        # 적합한 컨투어를 찾기 위한 리스트 초기화
-        lines = []
-        img_center_x = img.shape[1] // 2  # 이미지 중심 x좌표
-
-        for contour in contours:
-            area = cv2.contourArea(contour)
-            if area < 100:  # 면적 필터링
-                continue
-
-            # fitLine으로 선 구하기
-            [vx, vy, x0, y0] = cv2.fitLine(contour, cv2.DIST_L2, 0, 0.01, 0.01)
-            if abs(vx) < 1e-6: 
-                continue
-            
-            # 선의 방정식: y = m * x + b
-            slope = vy / vx
-            intercept = y0 - slope * x0
-            lines.append((slope, intercept))
-
-            # 선 그리기
-            topy = 0  # 이미지 상단 (y=0)
-            bottomy = img.shape[0]  # 이미지 하단 (y=height)
-            topx = int((topy - intercept) / slope)  # y=0에서의 x값
-            bottomx = int((bottomy - intercept) / slope)  # y=height에서의 x값
-            cv2.line(mask, (topx, topy), (bottomx, bottomy), (0, 0, 255), 4)
-
-        if len(lines) == 2:    # 두 선 간의 교차점 계산
-            for i in range(len(lines)):
-                for j in range(i + 1, len(lines)):
-                    m1, b1 = lines[i]
-                    m2, b2 = lines[j]
-                    
-                    # 평행 여부 확인
-                    if abs(m1 - m2) < 1e-6: 
-                        continue
-
-                    # 교차점 계산
-                    intersection_x = (b2 - b1) / (m1 - m2)
-                    intersection_y = m1 * intersection_x + b1
-                    print(intersection_x, intersection_y)
-                    # 교차점 표시
-
-                    if abs(intersection_x - img_center_x) < 40 and intersection_y > 250:
-                        self.roundabout_flag = True
-                        self.pub_flag = True
-                        print("ROUNDABOUT")
-
-        return mask
         
     def publish_mission_flag(self):
         # Main flag publishing logic

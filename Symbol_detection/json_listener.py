@@ -11,7 +11,6 @@ def detected_symbol_callback(msg):
         rospy.logerr("JSON 파싱 오류: %s", e)
         return
 
-    # 파싱된 리스트를 순회하며 각 검출 결과 출력
     for detection in detections:
         class_name = detection.get("class", "Unknown")
         width = detection.get("area", 0.0)
