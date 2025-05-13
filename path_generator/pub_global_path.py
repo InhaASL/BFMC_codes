@@ -4,6 +4,8 @@ import csv
 from nav_msgs.msg import Path
 from geometry_msgs.msg import PoseStamped
 
+# 생성된 경로를 path로 ros에 publish하는 코드
+
 def load_path_from_csv(filename="global_path.csv"):
     coords = []
     with open(filename, mode='r') as f:

@@ -2,6 +2,8 @@ import xml.etree.ElementTree as ET
 import numpy as np
 import csv
 
+## Waypoint list를 수동으로 넣어주면 경로 생성하는 코드
+
 GRAPHML_FILE = "Competition_track_graph.graphml"   
 
 def parse_graphml(file_path):

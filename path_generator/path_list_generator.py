@@ -4,6 +4,8 @@ import matplotlib.image as mpimg
 from PyQt5.QtWidgets import QApplication
 import sys
 
+## GUI로 waypoint만 출력하는 코드
+
 # 맵 설정
 MAP_IMAGE_PATH = 'Track.png'
 RESOLUTION = 0.00212
