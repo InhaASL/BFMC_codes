@@ -4,7 +4,7 @@ import matplotlib.image as mpimg
 import numpy as np
 import csv
 
-#건우님 original
+#cmh 수정 ver
 ## GUI를 통해 waypoint를 입력 받고 그 waypoint를 이용해 경로 계산 
 
 # ==== 설정 ====
@@ -92,14 +92,41 @@ class WaypointSelector:
         self.selected = []
         self.fig, self.ax = plt.subplots(figsize=(12, 8))
         self.cid = self.fig.canvas.mpl_connect('button_press_event', self.onclick)
+        self.path_lines = []  # 경로 라인을 저장할 리스트
 
     def draw(self):
         self.ax.imshow(self.img)
+        # 노드 표시
         for node, (x, y) in self.pos.items():
             self.ax.plot(x, y, 'ro', markersize=3)
-            # self.ax.text(x, y, str(node), fontsize=6, color='blue')
         self.ax.set_title('Click to select waypoints (close window to finish)')
         plt.show()
+
+    def draw_path(self, start_node, end_node):
+        try:
+            # 실제 트랙을 따라가는 경로 찾기
+            path = nx.shortest_path(self.G, source=str(start_node), target=str(end_node), weight='length')
+            
+            # 경로상의 모든 노드의 좌표를 수집
+            path_coords = []
+            for node in path:
+                node_int = int(node)
+                if node_int in self.waypoint_dict:
+                    x, y = self.waypoint_dict[node_int]
+                    px = (x - ORIGIN[0]) / RESOLUTION
+                    py = self.img.shape[0] - ((y - ORIGIN[1]) / RESOLUTION)
+                    path_coords.append((px, py))
+            
+            # 경로 그리기
+            if len(path_coords) > 1:
+                x_coords = [coord[0] for coord in path_coords]
+                y_coords = [coord[1] for coord in path_coords]
+                line, = self.ax.plot(x_coords, y_coords, 'g-', linewidth=2)
+                self.path_lines.append(line)
+                self.fig.canvas.draw()
+                
+        except nx.NetworkXNoPath:
+            print(f"Warning: No path found between {start_node} and {end_node}")
 
     def onclick(self, event):
         if event.inaxes:
@@ -111,9 +138,13 @@ class WaypointSelector:
 
             if len(self.selected) > 0:
                 prev_node = self.selected[-1]
-                x_values = [self.pos[prev_node][0], self.pos[closest_node][0]]
-                y_values = [self.pos[prev_node][1], self.pos[closest_node][1]]
-                self.ax.plot(x_values, y_values, 'g-', linewidth=2)
+                # 이전 경로 라인 제거
+                for line in self.path_lines:
+                    line.remove()
+                self.path_lines.clear()
+                
+                # 새로운 경로 그리기
+                self.draw_path(prev_node, closest_node)
 
             self.selected.append(closest_node)
             print(f"Selected: {closest_node}")
@@ -135,17 +166,24 @@ def main():
     selector.draw()
 
     selected_ids = selector.get_selected_waypoints()
-    raw_coords = [waypoint_dict[i] for i in selected_ids]
-
+    path_coords = []
     dotted_flags = []
 
     for i in range(len(selected_ids) - 1):
         u = str(selected_ids[i])
         v = str(selected_ids[i + 1])
         try:
-            # 1. shortest path로 중간 노드 경로 구함
-            path = nx.shortest_path(G, source=u, target=v)
-            # 2. 경로상의 모든 엣지 dotted 여부 확인
+            # 트랙을 따라가는 경로 찾기
+            path = nx.shortest_path(G, source=u, target=v, weight='length')
+            
+            # 경로상의 모든 노드의 좌표를 수집
+            segment_coords = []
+            for node in path:
+                node_int = int(node)
+                if node_int in waypoint_dict:
+                    segment_coords.append(waypoint_dict[node_int])
+            
+            # 경로상의 모든 엣지 dotted 여부 확인
             all_dotted = True
             for j in range(len(path) - 1):
                 a, b = path[j], path[j + 1]
@@ -160,15 +198,28 @@ def main():
                 else:
                     all_dotted = False
                     break
-            dotted_flags.append(all_dotted)
+            
+            # 각 좌표에 대해 dotted 플래그 추가
+            for coord in segment_coords:
+                path_coords.append(coord)
+                dotted_flags.append(all_dotted)
+            
         except nx.NetworkXNoPath:
-            # 연결 안 된 경우 fallback
+            print(f"Warning: No path found between {u} and {v}")
+            # 연결 실패 시 이전 점과 현재 점을 직선으로 연결
+            if i > 0:
+                path_coords.append(waypoint_dict[selected_ids[i]])
+                dotted_flags.append(False)
+            path_coords.append(waypoint_dict[selected_ids[i + 1]])
             dotted_flags.append(False)
 
-    # 마지막 점도 동일 상태로 처리
-    dotted_flags.append(dotted_flags[-1])
+    # 마지막 점이 아직 추가되지 않았다면 추가
+    if selected_ids and waypoint_dict[selected_ids[-1]] not in path_coords:
+        path_coords.append(waypoint_dict[selected_ids[-1]])
+        dotted_flags.append(dotted_flags[-1] if dotted_flags else False)
 
-    interpolated_coords = hermite_interpolate_with_dotted(raw_coords, dotted_flags, per_segment=3)
+    # 경로 보간
+    interpolated_coords = hermite_interpolate_with_dotted(path_coords, dotted_flags, per_segment=5)
     save_path_to_csv_with_dotted(interpolated_coords, "global_path.csv")
 
     print("\n✅ 경로가 global_path.csv에 저장되었습니다.")
