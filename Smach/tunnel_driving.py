@@ -26,7 +26,7 @@ class TunnelDriving:
         self.scan_data = None
 
         self.sub_scan = None
-        self.pub_drive = rospy.Publisher("/ackermann_cmd_mux/input/Navigation", AckermannDriveStamped, queue_size=1)
+        self.drive_pub = rospy.Publisher("/ackermann_cmd_mux/input/Navigation", AckermannDriveStamped, queue_size=10)
         self.pub_markers = rospy.Publisher("/roi_markers", MarkerArray, queue_size=1)
 
     def start(self):
@@ -82,7 +82,7 @@ class TunnelDriving:
         msg = AckermannDriveStamped()
         msg.drive.steering_angle = -steering_angle
         msg.drive.speed = speed
-        self.pub_drive.publish(msg)
+        self.drive_pub.publish(msg)
 
         self.prev_error = error
         self.last_time = current_time
@@ -135,9 +135,8 @@ class TunnelDriving:
         return marker
 
     def run(self):
-        rospy.init_node("Tunnel_Driving", anonymous=True)
         self.start()
-        rate = rospy.Rate(10)
+        rate = rospy.Rate(20)
         try:
             while not rospy.is_shutdown():
                 self.process_scan_data()
@@ -147,4 +146,5 @@ class TunnelDriving:
 
 
 if __name__ == "__main__":
+    rospy.init_node("Tunnel_Driving", anonymous=True)
     TunnelDriving().run()

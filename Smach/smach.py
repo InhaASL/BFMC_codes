@@ -2,193 +2,129 @@
 import rospy
 import smach
 import smach_ros
-import autorace_cone
-import autorace_laneFollow_2
-import autorace_wall
-import 
+import path_tracking
+import tunnel_driving
+import lane_Follow
+from flag_listener import MissionFlagListener
 from std_msgs.msg import String
-from sensor_msgs.msg import LaserScan
-from ackermann_msgs.msg import AckermannDriveStamped
 
 class MissionStart(smach.State):
-    def __init__(self):
+    def __init__(self, flag_listener):
         smach.State.__init__(self, outcomes=['start_mission'])
-        
+        self.listener = flag_listener
+
     def execute(self, userdata):
-        rospy.loginfo('State: MISSION START')
-        rospy.sleep(3)  
-        return 'start_mission'
+        rospy.loginfo('State: MISSION START - Waiting for mission_start flag')
+        rate = rospy.Rate(10)
+        while not rospy.is_shutdown():
+            flag = self.listener.get_flag()
+            if flag == 'mission_start':
+                self.listener.clear_flag()
+                return 'start_mission'
+            rate.sleep()
 
 class LaneFollow(smach.State):
-    def __init__(self):
-        smach.State.__init__(self, outcomes=['static_obstacle', 'dynamic_obstacle', 'rubber_cone', 'tunnel', 'roundabout', 'gate', 'parking', 'mission_end'])
-        self.mission_flag_sub = rospy.Subscriber('/mission_flag', String, self.flag_callback)
-        self.mission_flag = None  # Default mission flag
-        self.line_follow = autorace_laneFollow_2.LaneFollow()
-
+    def __init__(self, flag_listener):
+        smach.State.__init__(self, outcomes=['path_tracking', 'stop', 'parking', 'tunnel', 'mission_end'])
+        self.listener = flag_listener
+        self.line_follow = lane_Follow.LaneFollow()
         self.rate = rospy.Rate(20)
         self.deaccel_flag = False
-
-    def flag_callback(self, msg):
-        if msg is not None:
-            self.mission_flag = msg.data
-        else:
-            self.mission_flag = None
 
     def execute(self, userdata):
         rospy.loginfo('State: LANE FOLLOW')
         while not rospy.is_shutdown():
-            if self.mission_flag == 'static_obstacle':
-                self.mission_flag = None
-                return 'static_obstacle'
-            elif self.mission_flag == 'dynamic_obstacle':
-                self.mission_flag = None
-                return 'dynamic_obstacle'
-            elif self.mission_flag == 'rubber_cone':
-                self.mission_flag = None
-                return 'rubber_cone'
-            elif self.mission_flag == 'tunnel':
-                self.mission_flag = None
-                return 'tunnel'
-            elif self.mission_flag == 'gate':
-                self.mission_flag = None
-                return 'gate'
-            elif self.mission_flag == 'roundabout':
-                self.mission_flag = None
-                return 'roundabout'
-            elif self.mission_flag == 'kids_zone':
-                rospy.loginfo('State: KIDSZONE ENTRANCE')
-                self.mission_flag = None
+            flag = self.listener.get_flag()
+            if flag in ['path_tracking', 'stop', 'parking', 'tunnel', 'mission_end']:
+                self.listener.clear_flag()
+                return flag
+            elif flag == 'highway_start':
+                rospy.loginfo('State: Highway ENTRANCE')
+                self.listener.clear_flag()
                 self.deaccel_flag = True
-
-            elif self.mission_flag == 'kids_zone_end':
-                rospy.loginfo('State: KIDSZONE EXIT')
-                self.mission_flag = None
+            elif flag == 'highway_end':
+                rospy.loginfo('State: Highway EXIT')
+                self.listener.clear_flag()
                 self.deaccel_flag = False
-
-            elif self.mission_flag == 'parking':
-                self.mission_flag = None
-                return 'parking'
-            
-            elif self.mission_flag == 'mission_end':
-                self.mission_flag = None
-                return 'mission_end'
-            
             self.line_follow.run(self.deaccel_flag)
             self.rate.sleep()
 
 class PathTracking(smach.State):
-    def __init__(self):
-        smach.State.__init__(self, outcomes=['static_obstacle', 'dynamic_obstacle', 
-                                             'rubber_cone', 'tunnel','roundabout',
-                                             'gate','parking', 'mission_end'])
-        self.mission_flag_sub = rospy.Subscriber('/mission_flag', String, self.flag_callback)
-        self.mission_flag = None  # Default mission flag
-        self.line_follow = autorace_laneFollow_2.LaneFollow()
-
+    def __init__(self, flag_listener):
+        smach.State.__init__(self, outcomes=['lane_follow', 'stop', 'parking', 'tunnel', 'mission_end'])
+        self.listener = flag_listener
+        self.path_tracking = path_tracking.StanleyTracker()
         self.rate = rospy.Rate(20)
         self.deaccel_flag = False
 
-    def flag_callback(self, msg):
-        if msg is not None:
-            self.mission_flag = msg.data
-        else:
-            self.mission_flag = None
-
     def execute(self, userdata):
-        rospy.loginfo('State: LANE FOLLOW')
+        rospy.loginfo('State: PATH TRACKING')
         while not rospy.is_shutdown():
-            if self.mission_flag == 'static_obstacle':
-                self.mission_flag = None
-                return 'static_obstacle'
-            elif self.mission_flag == 'dynamic_obstacle':
-                self.mission_flag = None
-                return 'dynamic_obstacle'
-            elif self.mission_flag == 'rubber_cone':
-                self.mission_flag = None
-                return 'rubber_cone'
-            elif self.mission_flag == 'tunnel':
-                self.mission_flag = None
-                return 'tunnel'
-            elif self.mission_flag == 'gate':
-                self.mission_flag = None
-                return 'gate'
-            elif self.mission_flag == 'roundabout':
-                self.mission_flag = None
-                return 'roundabout'
-            elif self.mission_flag == 'kids_zone':
-                rospy.loginfo('State: KIDSZONE ENTRANCE')
-                self.mission_flag = None
+            flag = self.listener.get_flag()
+            if flag in ['lane_follow', 'stop', 'parking', 'tunnel', 'mission_end']:
+                self.listener.clear_flag()
+                return flag
+            elif flag == 'highway_start':
+                rospy.loginfo('State: Highway ENTRANCE')
+                self.listener.clear_flag()
                 self.deaccel_flag = True
-
-            elif self.mission_flag == 'kids_zone_end':
-                rospy.loginfo('State: KIDSZONE EXIT')
-                self.mission_flag = None
+            elif flag == 'highway_end':
+                rospy.loginfo('State: Highway EXIT')
+                self.listener.clear_flag()
                 self.deaccel_flag = False
-
-            elif self.mission_flag == 'parking':
-                self.mission_flag = None
-                return 'parking'
-            
-            elif self.mission_flag == 'mission_end':
-                self.mission_flag = None
-                return 'mission_end'
-            
-            self.line_follow.run(self.deaccel_flag)
+            self.path_tracking.run(self.deaccel_flag)
             self.rate.sleep()
 
 class Stop(smach.State):
-    def __init__(self):
-        smach.State.__init__(self, outcomes=['obstacle_cleared'])
+    def __init__(self, flag_listener):
+        smach.State.__init__(self, outcomes=['lane_follow', 'path_tracking', 'parking', 'tunnel', 'mission_end'])
+        self.listener = flag_listener
 
     def execute(self, userdata):
-
-        return 'obstacle_cleared'
-
-
-
+        rospy.loginfo('State: STOP')
+        rate = rospy.Rate(10)
+        while not rospy.is_shutdown():
+            flag = self.listener.get_flag()
+            if flag in ['lane_follow', 'path_tracking', 'parking', 'tunnel', 'mission_end']:
+                self.listener.clear_flag()
+                return flag
+            rate.sleep()
 
 class Tunnel(smach.State):
-    def __init__(self):
-        smach.State.__init__(self, outcomes=['crossroadA','crossroadB'])
-        self.mission_flag_sub = rospy.Subscriber('/mission_flag', String, self.flag_callback)
-        self.tunnel = autorace_wall.CenterlineFollow()
-        self.mission_flag = None
-
-    def flag_callback(self, msg):
-        if msg is not None:
-            self.mission_flag = msg.data
-        else:
-            self.mission_flag = None
+    def __init__(self, flag_listener):
+        smach.State.__init__(self, outcomes=['lane_follow', 'path_tracking', 'parking', 'stop', 'mission_end'])
+        self.listener = flag_listener
+        self.tunnel = tunnel_driving.TunnelDriving()
 
     def execute(self, userdata):
         rospy.loginfo('State: Tunnel DRIVING')
         rate = rospy.Rate(2)
         while not rospy.is_shutdown():
-            result = self.tunnel.process_scan_data() 
-            if result == "done":  
+            result = self.tunnel.process_scan_data()
+            if result == "done":
                 rospy.loginfo("Tunnel Finished. Waiting Marker...")
                 while not rospy.is_shutdown():
-
-                    if self.mission_flag == 'crossroadA':
-                        rospy.loginfo("A Marker Detected. Exiting state.")
-                        self.mission_flag = None
-                        return 'crossroadA'
-                    elif self.mission_flag == 'crossroadB':
-                        rospy.loginfo("B Marker Detected. Exiting state.")
-                        self.mission_flag = None
-                        return 'crossroadB'
+                    flag = self.listener.get_flag()
+                    if flag in ['lane_follow', 'path_tracking', 'parking', 'stop', 'mission_end']:
+                        self.listener.clear_flag()
+                        return flag
                     rate.sleep()
             rospy.sleep(0.1)
-                
 
 class Parking(smach.State):
-    def __init__(self):
-        smach.State.__init__(self, outcomes=['mission_done'])
-           
+    def __init__(self, flag_listener):
+        smach.State.__init__(self, outcomes=['lane_follow', 'path_tracking', 'stop', 'tunnel', 'mission_end'])
+        self.listener = flag_listener
 
     def execute(self, userdata):
-        return 'mission_done'
+        rospy.loginfo('State: PARKING')
+        rate = rospy.Rate(10)
+        while not rospy.is_shutdown():
+            flag = self.listener.get_flag()
+            if flag in ['lane_follow', 'path_tracking', 'stop', 'tunnel', 'mission_end']:
+                self.listener.clear_flag()
+                return flag
+            rate.sleep()
 
 class MissionEnd(smach.State):
     def __init__(self):
@@ -196,48 +132,26 @@ class MissionEnd(smach.State):
 
     def execute(self, userdata):
         rospy.loginfo('State: MISSION END')
-        rospy.sleep(3)  # Simulate end process
+        rospy.sleep(3)
         return 'terminate'
 
 def main():
-    rospy.init_node('STATE')
-    # Create a SMACH state machine
+    rospy.init_node('Smach_node')
+    flag_listener = MissionFlagListener()
     sm = smach.StateMachine(outcomes=['MISSION_TERMINATED'])
 
-    # Open the container
     with sm:
-        # Add states to the state machine
-        smach.StateMachine.add('MISSION_START', MissionStart(), transitions={'start_mission': 'LANE_FOLLOW'})
-        smach.StateMachine.add('LANE_FOLLOW', LaneFollow(), transitions={'static_obstacle': 'STATIC_OBSTACLE_AVOID',
-                                                                         'dynamic_obstacle': 'DYNAMIC_OBSTACLE_AVOID',
-                                                                         'rubber_cone': 'RUBBER_CONE_DRIVING',
-                                                                         'tunnel': 'TUNNEL_DRIVING',
-                                                                         'roundabout': 'ROUND_ABOUT',
-                                                                         'gate': 'CROSSING_GATE',
-                                                                         'parking': 'PARKING',
-                                                                         'mission_end': 'MISSION_END'})
-        smach.StateMachine.add('PATH_TRACKING', PathTracking(), transitions={'static_obstacle': 'STATIC_OBSTACLE_AVOID',
-                                                                         'dynamic_obstacle': 'DYNAMIC_OBSTACLE_AVOID',
-                                                                         'rubber_cone': 'RUBBER_CONE_DRIVING',
-                                                                         'tunnel': 'TUNNEL_DRIVING',
-                                                                         'roundabout': 'ROUND_ABOUT',
-                                                                         'gate': 'CROSSING_GATE',
-                                                                         'parking': 'PARKING',
-                                                                         'mission_end': 'MISSION_END'})
-
-        smach.StateMachine.add('STOP', Stop(), transitions={'obstacle_cleared': 'LANE_FOLLOW'})
-        smach.StateMachine.add('TUNNEL_DRIVING', Tunnel(), transitions={'crossroadA': 'CROSSROAD_A',
-                                                                         'crossroadB': 'CROSSROAD_B'})
-        smach.StateMachine.add('PARKING', Parking(), transitions={'mission_done': 'MISSION_END'})
+        smach.StateMachine.add('MISSION_START', MissionStart(flag_listener), transitions={'start_mission': 'LANE_FOLLOW'})
+        smach.StateMachine.add('LANE_FOLLOW', LaneFollow(flag_listener), transitions={'path_tracking': 'PATH_TRACKING', 'stop': 'STOP', 'parking': 'PARKING', 'tunnel': 'TUNNEL_DRIVING', 'mission_end': 'MISSION_END'})
+        smach.StateMachine.add('PATH_TRACKING', PathTracking(flag_listener), transitions={'lane_follow': 'LANE_FOLLOW', 'stop': 'STOP', 'parking': 'PARKING', 'tunnel': 'TUNNEL_DRIVING', 'mission_end': 'MISSION_END'})
+        smach.StateMachine.add('STOP', Stop(flag_listener), transitions={'lane_follow': 'LANE_FOLLOW', 'path_tracking': 'PATH_TRACKING', 'parking': 'PARKING', 'tunnel': 'TUNNEL_DRIVING', 'mission_end': 'MISSION_END'})
+        smach.StateMachine.add('TUNNEL_DRIVING', Tunnel(flag_listener), transitions={'lane_follow': 'LANE_FOLLOW', 'path_tracking': 'PATH_TRACKING', 'parking': 'PARKING', 'stop': 'STOP', 'mission_end': 'MISSION_END'})
+        smach.StateMachine.add('PARKING', Parking(flag_listener), transitions={'lane_follow': 'LANE_FOLLOW', 'path_tracking': 'PATH_TRACKING', 'stop': 'STOP', 'tunnel': 'TUNNEL_DRIVING', 'mission_end': 'MISSION_END'})
         smach.StateMachine.add('MISSION_END', MissionEnd(), transitions={'terminate': 'MISSION_TERMINATED'})
-    # # Create and start the introspection server
+
     sis = smach_ros.IntrospectionServer('server_name', sm, '/SM_ROOT')
     sis.start()
-
-    # Execute the state machine
     outcome = sm.execute()
-
-    # Wait for ctrl-c to stop the application
     rospy.spin()
     sis.stop()
 

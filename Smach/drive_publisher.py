@@ -5,7 +5,7 @@ from threading import Lock
 class DrivePublisher:
     def __init__(self):
         self._lock = Lock()
-        self._publisher = rospy.Publisher("/ackermann_cmd_mux/input/navigation", AckermannDriveStamped, queue_size=1)
+        self._publisher = rospy.Publisher("/ackermann_cmd_mux/input/Navigation", AckermannDriveStamped, queue_size=1)
 
     def publish(self, steering_angle, speed):
         with self._lock:
