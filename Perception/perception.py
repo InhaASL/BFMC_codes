@@ -15,19 +15,25 @@ class PerceptionNode:
 
         # 상태 정의
         self.MISSION_STATES = {
-            1: 'path_tracking',
-            2: 'lane_follow',
-            3: 'parking',
-            4: 'stop',
-            5: 'mission_start',
-            6: 'mission_end'
-        }
+        1: 'path_tracking',
+        2: 'lane_follow',
+        3: 'parking',
+        4: 'stop_obstacle',
+        5: 'stop_second',
+        6: 'stop_traffic',
+        7: 'roundabout',
+        8: 'tunnel',
+        9: 'mission_start',
+        10: 'mission_end'}
+
         self.current_state = 5
+        self.previous_state = None
 
         self.scan_data = None
         self.detected_symbols = []
         self.stop_line_detected = False
         self.x = self.y = self.yaw = None
+        self.roundabout_init_flag = True
 
         rospy.Subscriber("/detected_symbol", String, self.detected_symbol_callback)
         rospy.Subscriber('/scan', LaserScan, self.scan_callback)
@@ -57,6 +63,8 @@ class PerceptionNode:
     def stop_line_callback(self, msg):
         if msg is not None:
             self.stop_line_detected = msg.data
+        else:
+            self.stop_line_detected = False
 
     def odom_callback(self, msg):
         if msg is not None:
@@ -65,7 +73,7 @@ class PerceptionNode:
             orientation = msg.pose.pose.orientation
             _, _, self.yaw = tf.transformations.euler_from_quaternion([orientation.x, orientation.y, orientation.z, orientation.w])
 
-    def is_label_detect(self, target_labels, area_thresh=1000.0):
+    def get_detected_label(self, target_labels, area_thresh=1000.0):
         if isinstance(target_labels, str):
             target_labels = [target_labels]
 
@@ -78,7 +86,7 @@ class PerceptionNode:
                 return label
         return None
 
-    def is_obstacle_scan(self, angle_range_1, angle_range_2, distance_range=(0.1, 0.5)):
+    def is_detected_obstacle(self, angle_range_1, angle_range_2, distance_range=(0.1, 0.5)):
         if not self.scan_data:
             return False
 
@@ -106,6 +114,52 @@ class PerceptionNode:
         sector_mask = (mask1 | mask2) & valid_distance
 
         return np.any(sector_mask)
+    
+    def is_detected_tunnel(self, angle_offsets=[90, 110, 130], wall_distance_thresh=0.6, mode="entry"):
+        if not self.scan_data:
+            return False
+        ranges = np.array(self.scan_data.ranges)
+        angle_min = self.scan_data.angle_min
+        angle_increment = self.scan_data.angle_increment
+        num_points = len(ranges)
+
+        # 좌우 각도 리스트 (rad)
+        left_angles = [np.radians(a) for a in angle_offsets]
+        right_angles = [np.radians(-a) for a in angle_offsets]
+
+        left_points = []
+        right_points = []
+
+        def get_distance(angle_rad):
+            idx = int((angle_rad - angle_min) / angle_increment)
+            if 0 <= idx < num_points:
+                dist = ranges[idx]
+                if np.isfinite(dist) and dist < 3.0:
+                    return dist
+            return None
+
+        for la, ra in zip(left_angles, right_angles):
+            dl = get_distance(la)
+            dr = get_distance(ra)
+
+            if dl is None or dr is None:
+                return False
+
+            left_points.append((dl * np.cos(la), dl * np.sin(la)))
+            right_points.append((dr * np.cos(ra), dr * np.sin(ra)))
+
+        distances = [
+            np.hypot(lx - rx, ly - ry)
+            for (lx, ly), (rx, ry) in zip(left_points, right_points)
+        ]
+        mean_wall_distance = np.mean(distances)
+
+        if mode == "entry":
+            return mean_wall_distance < wall_distance_thresh
+        elif mode == "exit":
+            return mean_wall_distance > wall_distance_thresh
+        else:
+            return False
 
     def state_machine(self, event):
         if self.current_state == 1:    # path tracking
@@ -114,27 +168,49 @@ class PerceptionNode:
             self.handle_lane_follow()
         elif self.current_state == 3:  # parking
             self.handle_parking()
-        elif self.current_state == 4:  # stop
-            self.handle_stop()
-        elif self.current_state == 5:  # mission start
+        elif self.current_state == 4:  # stop_obstacle
+            self.handle_stop_obstacle()
+        elif self.current_state == 5:  # stop_second
+            self.handle_stop_second()
+        elif self.current_state == 6:  # stop_traffic
+            self.handle_stop_traffic()
+        elif self.current_state == 7:  # roundabout
+            self.handle_roundabout()
+        elif self.current_state == 8:  # tunnel
+            self.handle_tunnel()
+        elif self.current_state == 9:  # mission start
             self.handle_mission_start()
-        elif self.current_state == 6:  # mission end
+        elif self.current_state == 10:  # mission end
             rospy.loginfo("Mission ended. Shutting down perception node.")
             rospy.signal_shutdown("Mission completed.")
             return
+        
+    def transition_to(self, new_state):
+        self.previous_state = self.current_state
+        self.current_state = new_state
 
     def handle_path_tracking(self):
-        label_detected = self.is_label_detect(["object_1", "object_2", "HighwayEntry", "HighwayEnd", "Stop"], 500.0)
+        label_detected = self.get_detected_label(["object_1", "object_2", "HighwayEntry", "HighwayEnd", "Stop", "Roundabout"], 500.0)
 
         # Obstacle Detect
-        if label_detected == "object_1" or label_detected == "object_1" and self.is_obstacle_scan((-160,-180), (0, 20), (0.2, 0.7)):
+        if label_detected in ["object_1", "object_2"] and self.is_detected_obstacle((-160, -180), (0, 20), (0.2, 0.7)):
             self.publish_mission_flag("stop")
-            self.current_state = 4
+            self.transition_to(4)
 
         # Stop Sign Detect
         if label_detected == "Stop" and self.stop_line_detected:
             self.publish_mission_flag("stop")
-            self.current_state = 4
+            self.transition_to(6)
+
+        # Roundabout Detect
+        if label_detected == "Roundabout" and self.stop_line_detected:
+            self.publish_mission_flag("stop")
+            self.transition_to(7)
+
+        # Tunnel Detect
+        if self.is_detected_tunnel(angle_offsets=[160, 135, 110], wall_distance_thresh=0.6, mode="entry"):
+            self.publish_mission_flag("tunnel")
+            self.transition_to(8)
 
         # Highway Check            
         if label_detected == "HighwayEntry":
@@ -145,42 +221,79 @@ class PerceptionNode:
             self.publish_mission_flag("highway_end")
 
     def handle_lane_follow(self):
-        for symbol in self.detected_symbols:
-            label = symbol.get("label", "").lower()
-            if label == "stop":
-                self.publish_mission_flag("stop")
-                self.current_state = 4
-                return
-            elif label == "highway":
-                self.publish_mission_flag("lane_follow")
-                self.current_state = 2
-                return
-            elif label == "parking":
-                self.publish_mission_flag("parking")
-                self.current_state = 3
-                return
-            
-        # Obstacle Detect
-        if self.is_label_detect(["object_1", "object_2"], 1000) and self.is_obstacle_scan((-160,-180), (0, 20), (0.2, 0.7)):
-            self.publish_mission_flag("stop")
-            self.current_state = 4
+        label_detected = self.get_detected_label(["object_1", "object_2", "HighwayEntry", "HighwayEnd", "Stop", "Roundabout"], 500.0)
 
-    def handle_stop(self):
-        if self.scan_data:
-            min_distance = min(self.scan_data.ranges)
-            if min_distance > 1.0:  # 안전거리 확보됨
-                rospy.loginfo("Obstacle cleared, resuming path_tracking")
+        # Obstacle Detect
+        if label_detected in ["object_1", "object_2"] and self.is_detected_obstacle((-160, -180), (0, 20), (0.2, 0.7)):
+            self.publish_mission_flag("stop")
+            self.transition_to(4)
+
+        # Stop Sign Detect
+        if label_detected == "Stop" and self.stop_line_detected:
+            self.publish_mission_flag("stop")
+            self.transition_to(6)
+
+        # Roundabout Detect
+        if label_detected == "Roundabout" and self.stop_line_detected:
+            self.publish_mission_flag("stop")
+            self.transition_to(7)
+
+        # Tunnel Detect
+        if self.is_detected_tunnel(angle_offsets=[160, 135, 110], wall_distance_thresh=0.6, mode="entry"):
+            self.publish_mission_flag("tunnel")
+            self.transition_to(8)
+
+        # Highway Check            
+        if label_detected == "HighwayEntry":
+            rospy.loginfo("Recognize Highway Entrance")
+            self.publish_mission_flag("highway_start")
+        elif label_detected == "HighwayEnd":
+            rospy.loginfo("Recognize Highway Exit")
+            self.publish_mission_flag("highway_end")
+
+    def handle_tunnel(self):
+        if self.is_detected_tunnel(angle_offsets=[90, 70, 50], wall_distance_thresh=0.6, mode="exit"):
+            self.publish_mission_flag("stop")
+            self.transition_to(1)
+
+    def handle_stop_obstacle(self):
+        if not self.is_detected_obstacle((-160,-180), (0, 20), (0.2, 0.7)):
+            self.publish_mission_flag("path_tracking")
+            self.transition_to(1)
+
+    def handle_stop_second(self):
+        rospy.sleep(1.0)
+        self.publish_mission_flag("path_tracking")
+        self.transition_to(self.previous_state)
+    
+    def handle_stop_traffic(self):
+        label_detected = self.get_detected_label("Greenlight", 500.0)
+        if label_detected == "Greenlight":
+            self.publish_mission_flag("path_tracking")
+            self.transition_to(1)
+
+    def handle_roundabout(self):
+        if self.roundabout_init_flag:
+            if self.is_detected_obstacle((-160,-180), (0, 0), (0.2, 0.7)):
+                self.roundabout_init_flag = False
                 self.publish_mission_flag("path_tracking")
-                self.current_state = 1
+            
+        if self.is_detected_obstacle((-160,-180), (0, 20), (0.2, 0.5)):
+            self.publish_mission_flag("stop")
+            self.transition_to(5)
+
+        if self.stop_line_detected:
+            self.transition_to(1)
+            self.roundabout_init_flag = True
 
     def handle_parking(self):
         pass
 
     def handle_mission_start(self):
-        if self.is_label_detect("Greenlight", 1000.0):
+        label_detected = self.get_detected_label("Greenlight", 500.0)
+        if label_detected == "Greenlight":
             self.publish_mission_flag("path_tracking")
-            self.current_state = 1
-            return
+            self.transition_to(1)
 
     def publish_mission_flag(self, flag):
         rospy.loginfo(f"Publishing mission flag: {flag}")
