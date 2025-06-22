@@ -12,7 +12,7 @@ class LaneFollow:
     def __init__(self):
         self.br = CvBridge()
         # self.image_sub = rospy.Subscriber('/oak/rgb/image_rect', Image, self.image_callback)
-        self.image_sub = rospy.Subscriber('/oak/rgb/image_rect_color/compressed', CompressedImage, self.image_callback)
+        self.image_sub = rospy.Subscriber('/d455/color/image_raw/compressed', CompressedImage, self.image_callback)
         self.ack_pub = rospy.Publisher('/high_level/ackermann_cmd_mux/input/navigation', AckermannDriveStamped, queue_size=10)
         self.debug_publisher1 = rospy.Publisher('/debugging_image1', Image, queue_size=10)
         self.debug_publisher2 = rospy.Publisher('/debugging_image2', Image, queue_size=10)
@@ -20,7 +20,7 @@ class LaneFollow:
         # ROI 파라미터
         self.roi_x_l = rospy.get_param('~roi_x_l', 0)
         self.roi_x_h = rospy.get_param('~roi_x_h', 1280)
-        self.roi_y_l = rospy.get_param('~roi_y_l', 380)  # ROI 영역을 아래로 조정
+        self.roi_y_l = rospy.get_param('~roi_y_l', 500)  # ROI 영역을 아래로 조정
         self.roi_y_h = rospy.get_param('~roi_y_h', 720)
 
         # 차선 검출 파라미터
@@ -152,7 +152,7 @@ class LaneFollow:
         msg.header.stamp = rospy.Time.now()
         msg.header.frame_id = "base_link"
         msg.drive.steering_angle = -theta_rad
-        print(np.rad2deg(theta_rad))
+        # print(np.rad2deg(theta_rad))
         msg.drive.speed = 1.0 if accel_flag else 2.0
         self.ack_pub.publish(msg)
 
@@ -162,6 +162,7 @@ class LaneFollow:
             return
         
         # 원근 변환 및 ROI 추출
+        # print(self.image_.shape)
         self.warp_ = cv2.warpPerspective(self.image_, self.matrix, (self.image_.shape[1], self.image_.shape[0]))
         self.roi_ = self.warp_[self.roi_y_l:self.roi_y_h, self.roi_x_l:self.roi_x_h]
         
