@@ -51,6 +51,8 @@ class PerceptionNode:
                  8: 'pedestrian', 9: 'priorityroad', 10: 'redlight', 11: 'roundabout', 
                  12: 'stop', 13: 'yellowlight', 14: 'object_1', 15: 'object_2'}
         '''
+
+        
         try:
             self.detected_symbols = json.loads(msg.data)  # YOLO 결과 리스트로 가정
         except json.JSONDecodeError:

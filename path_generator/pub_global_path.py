@@ -36,5 +36,6 @@ def publish_path(coords):
         rate.sleep()
 
 if __name__ == '__main__':
-    path_coords = load_path_from_csv("global_path.csv")
+    # path_coords = load_path_from_csv("global_path.csv")
+    path_coords = load_path_from_csv("cmh_global_path.csv")
     publish_path(path_coords)
