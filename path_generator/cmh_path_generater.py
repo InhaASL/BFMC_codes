@@ -10,8 +10,12 @@ import csv
 # ==== 설정 ====
 MAP_IMAGE_PATH = 'Track.png'
 GRAPHML_FILE = 'Competition_track_graph.graphml'
-RESOLUTION = 0.00212
+# RESOLUTION = 0.00212 #for linux
+RESOLUTION = 0.02038   #for mac
+
 ORIGIN = [0.0, 0.0, 0.0]
+
+
 
 
 # ==== Hermite 보간 + dotted 처리 ====
@@ -84,7 +88,7 @@ def load_graph_and_waypoints(graphml_path, img_height):
 
 # ==== 클릭 GUI ====
 class WaypointSelector:
-    def __init__(self, graph, pos, img, waypoint_dict):
+    def __init__(self, graph, pos, img, waypoint_dict): 
         self.G = graph
         self.pos = pos
         self.img = img
@@ -162,6 +166,27 @@ def main():
 
     G, positions, waypoint_dict = load_graph_and_waypoints(GRAPHML_FILE, img_height)
 
+    # #이미지 실제 스케일 매칭하기 위함
+    # print(f"🖼️ 이미지 크기: {img.shape}")  # (height, width, channels)
+    
+    # xs = [pt[0] for pt in waypoint_dict.values()]
+    # ys = [pt[1] for pt in waypoint_dict.values()]
+    
+    # print(f"원본 좌표 범위:")
+    # print(f"  - x: {min(xs):.2f} ~ {max(xs):.2f}")
+    # print(f"  - y: {min(ys):.2f} ~ {max(ys):.2f}")
+    
+    # pxs = [(x - ORIGIN[0]) / RESOLUTION for x in xs]
+    # pys = [img_height - ((y - ORIGIN[1]) / RESOLUTION) for y in ys]
+    
+    # print(f"변환된 픽셀 좌표 범위:")
+    # print(f"  - px: {min(pxs):.2f} ~ {max(pxs):.2f}")
+    # print(f"  - py: {min(pys):.2f} ~ {max(pys):.2f}")
+    # print(f"이미지 너비 (x축): {img.shape[1]}px")
+    # print(f"이미지 높이 (y축): {img.shape[0]}px")
+    # #여기까지 
+
+
     selector = WaypointSelector(G, positions, img, waypoint_dict)
     selector.draw()
 
@@ -220,9 +245,9 @@ def main():
 
     # 경로 보간
     interpolated_coords = hermite_interpolate_with_dotted(path_coords, dotted_flags, per_segment=5)
-    save_path_to_csv_with_dotted(interpolated_coords, "global_path.csv")
+    save_path_to_csv_with_dotted(interpolated_coords, "cmh_global_path.csv")
 
-    print("\n✅ 경로가 global_path.csv에 저장되었습니다.")
+    print("\n✅ 경로가 cmh_global_path.csv에 저장되었습니다.")
 
 
 if __name__ == "__main__":
