@@ -75,7 +75,7 @@ class PerceptionNode:
             orientation = msg.pose.pose.orientation
             _, _, self.yaw = tf.transformations.euler_from_quaternion([orientation.x, orientation.y, orientation.z, orientation.w])
 
-    def get_detected_label(self, target_labels, area_thresh=7000.0):
+    def get_detected_label(self, target_labels, area_thresh=5000.0):
         if isinstance(target_labels, str):
             target_labels = [target_labels]
         target_labels = [l.lower() for l in target_labels]
@@ -217,7 +217,7 @@ class PerceptionNode:
     ######################################### 메인 동작 파트  ######################################################
       
     def handle_path_tracking(self):
-        label_detected = self.get_detected_label(["object", "highwayentry", "highwayend", "redlight", "stop", "roundabout", 'crosswalk'], 7000.0)
+        label_detected = self.get_detected_label(["nothing", "object", "highwayentry", "highwayend", "redlight", "stop", "roundabout", 'crosswalk'], 5000.0)
         
         if label_detected != None:
             rospy.loginfo("----------------------")
@@ -262,7 +262,7 @@ class PerceptionNode:
             self.publish_mission_flag("highway_end")
 
     def handle_lane_follow(self):
-        label_detected = self.get_detected_label(["object", "highwayentry", "highwayend", "redlight", "stop", "roundabout", 'crosswalk'], 7000.0)
+        label_detected = self.get_detected_label(["nothing", "object", "highwayentry", "highwayend", "redlight", "stop", "roundabout", 'crosswalk'], 5000.0)
         
         if label_detected != None:
             rospy.loginfo("----------------------")
@@ -295,7 +295,6 @@ class PerceptionNode:
 
         # Tunnel Detect
         if self.is_detected_tunnel(angle_offsets=[160, 135, 110], wall_distance_thresh=1.15, mode="entry"):
-            rospy.loginfo("Tunnel Entry")
             self.publish_mission_flag("tunnel")
             self.transition_to(8)
 
@@ -312,7 +311,8 @@ class PerceptionNode:
 
 
     def handle_tunnel(self):
-        if self.is_detected_tunnel(angle_offsets=[90, 70, 50], wall_distance_thresh=0.8, mode="exit"):
+        if self.is_detected_tunnel(angle_offsets=[90, 70, 50], wall_distance_thresh=0.7, mode="exit"):
+            rospy.loginfo("----------------------")
             rospy.loginfo("Tunnel Exit")
             self.publish_mission_flag("path_traking")
             self.transition_to(1)
@@ -323,12 +323,12 @@ class PerceptionNode:
             self.transition_to(1)
 
     def handle_stop_second(self):
-        rospy.sleep(1.0)
+        rospy.sleep(3.0)
         self.publish_mission_flag("path_tracking")
         self.transition_to(self.previous_state)
     
     def handle_stop_traffic(self):
-        label_detected = self.get_detected_label("greenlight", 7000.0)
+        label_detected = self.get_detected_label("greenlight", 5000.0)
 
         if label_detected != None:
             rospy.loginfo("----------------------")
@@ -357,7 +357,7 @@ class PerceptionNode:
         pass
 
     def handle_mission_start(self):
-        label_detected = self.get_detected_label("greenlight", 7000.0)
+        label_detected = self.get_detected_label("greenlight", 5000.0)
         if label_detected == "greenlight":
             self.publish_mission_flag("path_tracking")
             self.transition_to(1)
