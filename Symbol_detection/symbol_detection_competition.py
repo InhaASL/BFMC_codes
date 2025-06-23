@@ -14,7 +14,7 @@ class Symbol_detection():
         logging.getLogger("ultralytics").setLevel(logging.ERROR)
 
         # 프레임 지정
-        self.frame_interval = 5
+        self.frame_interval = 10
         self.frame_count = 0
 
         rospy.init_node('symbol_detect_node')
@@ -24,9 +24,9 @@ class Symbol_detection():
         self.debug_pub = rospy.Publisher('/debug', Image, queue_size=10)
         self.bridge = CvBridge()
 
-        self.model = YOLO("/home/tony/yolo/yolo/competition_v2.pt")
-        self.conf_threshold = 0.5
-        self.iou_threshold = 0.5
+        self.model = YOLO("/home/tony/BFMC_codes/Symbol_detection/last.pt")
+        self.conf_threshold = 0.6
+        self.iou_threshold = 0.6
 
     def image_callback(self, msg):
         try:
