@@ -3,7 +3,7 @@ import rospy
 import tf
 import math
 import numpy as np
-from nav_msgs.msg import Odometry, Path
+from nav_msgs.msg import Path
 from geometry_msgs.msg import PoseStamped
 from ackermann_msgs.msg import AckermannDriveStamped
 from visualization_msgs.msg import Marker
@@ -14,36 +14,30 @@ class StanleyTracker:
         self.k_gain = rospy.get_param("~stanley_k", 1.0)
         self.max_steering_angle = rospy.get_param("~max_steering_angle", 0.418)
         self.search_window = rospy.get_param("~search_window", 20)
-        self.speed = rospy.get_param("~speed", 1.0)
+        self.speed = rospy.get_param("~speed", 2.0)
         self.min_speed_ratio = rospy.get_param("~min_speed_ratio", 0.2)
 
         self.path_np = None  # np.array of shape (N, 2)
         self.path_received = False
         self.search_start_idx = 0
-
         self.debugging = True
 
-        self.odom_sub = rospy.Subscriber("/odom", Odometry, self.odom_callback)
+        self.pose_sub = rospy.Subscriber("/global_pose", PoseStamped, self.pose_callback)
         self.path_sub = rospy.Subscriber("/global_path", Path, self.path_callback)
-        self.drive_pub = rospy.Publisher("/nav", AckermannDriveStamped, queue_size=10)
+        self.drive_pub = rospy.Publisher("/ackermann_cmd_mux/input/Navigation", AckermannDriveStamped, queue_size=10)
         self.marker_pub = rospy.Publisher("/tracking_target_marker", Marker, queue_size=1)
-
-        # self.odom_sub = rospy.Subscriber("/odom", Odometry, self.odom_callback)
-        # self.path_sub = rospy.Subscriber("/path", Path, self.path_callback)
-        # self.drive_pub = rospy.Publisher("/ackermann_cmd_mux/input/Navigation", AckermannDriveStamped, queue_size=10)
 
     def path_callback(self, msg):
         self.path_np = np.array([(pose.pose.position.x, pose.pose.position.y) for pose in msg.poses])
         self.path_received = True
-        # self.search_start_idx = 0
 
-    def odom_callback(self, msg):
+    def pose_callback(self, msg):
         if not self.path_received or self.path_np is None or len(self.path_np) == 0:
             return
 
-        x = msg.pose.pose.position.x
-        y = msg.pose.pose.position.y
-        orientation = msg.pose.pose.orientation
+        x = msg.pose.position.x
+        y = msg.pose.position.y
+        orientation = msg.pose.orientation
         _, _, yaw = tf.transformations.euler_from_quaternion([
             orientation.x, orientation.y, orientation.z, orientation.w
         ])
@@ -70,10 +64,10 @@ class StanleyTracker:
 
         self.publish_drive(steering, dynamic_speed)
         if self.debugging:
-         self.publish_marker(tx, ty) 
+            self.publish_marker(tx, ty)
 
     def find_lookahead_index(self, x, y, lookahead_distance):
-        lookahead_distance = max(lookahead_distance - self.speed *0.3 ,0.5)
+        lookahead_distance = max(lookahead_distance - self.speed * 0.3, 0.5)
         start = self.search_start_idx
         end = min(start + self.search_window, len(self.path_np))
 
@@ -102,7 +96,6 @@ class StanleyTracker:
         msg.drive.steering_angle = steering_angle
         msg.drive.speed = speed
         self.drive_pub.publish(msg)
-        
 
     def publish_marker(self, x, y):
         marker = Marker()

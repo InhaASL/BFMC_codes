@@ -141,7 +141,7 @@ def main():
     sm = smach.StateMachine(outcomes=['MISSION_TERMINATED'])
 
     with sm:
-        smach.StateMachine.add('MISSION_START', MissionStart(flag_listener), transitions={'start_mission': 'LANE_FOLLOW'})
+        smach.StateMachine.add('MISSION_START', MissionStart(flag_listener), transitions={'start_mission': 'PATH_TRACKING'})
         smach.StateMachine.add('LANE_FOLLOW', LaneFollow(flag_listener), transitions={'path_tracking': 'PATH_TRACKING', 'stop': 'STOP', 'parking': 'PARKING', 'tunnel': 'TUNNEL_DRIVING', 'mission_end': 'MISSION_END'})
         smach.StateMachine.add('PATH_TRACKING', PathTracking(flag_listener), transitions={'lane_follow': 'LANE_FOLLOW', 'stop': 'STOP', 'parking': 'PARKING', 'tunnel': 'TUNNEL_DRIVING', 'mission_end': 'MISSION_END'})
         smach.StateMachine.add('STOP', Stop(flag_listener), transitions={'lane_follow': 'LANE_FOLLOW', 'path_tracking': 'PATH_TRACKING', 'parking': 'PARKING', 'tunnel': 'TUNNEL_DRIVING', 'mission_end': 'MISSION_END'})

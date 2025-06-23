@@ -3,7 +3,7 @@ import rospy
 import tf
 import math
 import numpy as np
-from nav_msgs.msg import Odometry, Path
+from nav_msgs.msg import Path
 from geometry_msgs.msg import PoseStamped
 from ackermann_msgs.msg import AckermannDriveStamped
 from visualization_msgs.msg import Marker
@@ -13,8 +13,8 @@ class StanleyTracker:
         self.wheelbase = rospy.get_param("~wheelbase", 0.26)
         self.k_gain = rospy.get_param("~stanley_k", 1.0)
         self.max_steering_angle = rospy.get_param("~max_steering_angle", 0.418)
-        self.search_window = rospy.get_param("~search_window", 20)
-        self.speed = rospy.get_param("~speed", 1.0)
+        self.search_window = rospy.get_param("~search_window", 40)
+        self.speed = rospy.get_param("~speed", 2.0)
         self.min_speed_ratio = rospy.get_param("~min_speed_ratio", 0.2)
 
         self.path_np = None  # np.array of shape (N, 2)
@@ -23,13 +23,13 @@ class StanleyTracker:
 
         self.debugging = True
 
-        self.x = 0
-        self.y = 0
-        self.yaw = 0
+        self.x = None
+        self.y = None
+        self.yaw = None
 
         self.pose_sub = None
         self.path_sub = None
-        self.drive_pub = rospy.Publisher("/ackermann_cmd_mux/input/Navigation", AckermannDriveStamped, queue_size=10)
+        self.drive_pub = rospy.Publisher("/ackermann_cmd_mux/input/navigation", AckermannDriveStamped, queue_size=10)
         self.marker_pub = rospy.Publisher("/lookahead_marker", Marker, queue_size=1)
 
     def start(self):
@@ -47,9 +47,8 @@ class StanleyTracker:
     def path_callback(self, msg):
         self.path_np = np.array([(pose.pose.position.x, pose.pose.position.y) for pose in msg.poses])
         self.path_received = True
-        # self.search_start_idx = 0
 
-    def pose_callback(self, msg):  # odom_callback -> pose_callback
+    def pose_callback(self, msg):
         if not self.path_received or self.path_np is None or len(self.path_np) == 0:
             return
 
@@ -63,14 +62,12 @@ class StanleyTracker:
     def process_tracking(self):
         if self.x is None or self.y is None or self.yaw is None:
             return 
-
         if self.path_np is None or len(self.path_np) == 0:
             return
 
+        self.search_start_idx = self.find_nearest_index(self.x, self.y)
+
         lookahead_idx = self.find_lookahead_index(self.x, self.y, lookahead_distance=0.8)
-        if lookahead_idx < self.search_start_idx:
-            lookahead_idx = self.search_start_idx
-        self.search_start_idx = lookahead_idx
 
         tx, ty = self.path_np[lookahead_idx]
         dx = tx - self.x
@@ -90,10 +87,25 @@ class StanleyTracker:
         self.publish_drive(steering, dynamic_speed)
 
         if self.debugging:
-         self.publish_marker(tx, ty) 
+            self.publish_marker(tx, ty)
+
+    def find_nearest_index(self, x, y):
+        if self.path_np is None or len(self.path_np) == 0:
+            return 0
+
+        start = self.search_start_idx
+        end = min(start + self.search_window, len(self.path_np))
+        segment = self.path_np[start:end]
+
+        dx = segment[:, 0] - x
+        dy = segment[:, 1] - y
+        dists = np.sqrt(dx**2 + dy**2)
+
+        nearest_local_idx = int(np.argmin(dists))
+        return start + nearest_local_idx
 
     def find_lookahead_index(self, x, y, lookahead_distance):
-        lookahead_distance = max(lookahead_distance - self.speed *0.3 ,0.5)
+        lookahead_distance = max(lookahead_distance - self.speed * 0.3, 0.5)
         start = self.search_start_idx
         end = min(start + self.search_window, len(self.path_np))
 
@@ -157,4 +169,3 @@ class StanleyTracker:
 if __name__ == "__main__":
     rospy.init_node("stanley_tracker")
     StanleyTracker().run()
-
