@@ -23,19 +23,24 @@ class StanleyTracker:
 
         self.debugging = True
 
-        self.odom_sub = None
+        self.x = 0
+        self.y = 0
+        self.yaw = 0
+
+        self.pose_sub = None
         self.path_sub = None
         self.drive_pub = rospy.Publisher("/ackermann_cmd_mux/input/Navigation", AckermannDriveStamped, queue_size=10)
+        self.marker_pub = rospy.Publisher("/lookahead_marker", Marker, queue_size=1)
 
     def start(self):
-        if self.odom_sub is None:
-            self.odom_sub = rospy.Subscriber("/odom", Odometry, self.odom_callback)
-            self.path_sub = rospy.Subscriber("/path", Path, self.path_callback)
+        if self.pose_sub is None:
+            self.pose_sub = rospy.Subscriber("/global_pose", PoseStamped, self.pose_callback) 
+            self.path_sub = rospy.Subscriber("/global_path", Path, self.path_callback)
 
     def stop(self):
-        if self.odom_sub is not None:
-            self.odom_sub.unregister()
-            self.sub_scan = None
+        if self.pose_sub is not None:
+            self.pose_sub.unregister()
+            self.pose_sub = None
             self.path_sub.unregister()
             self.path_sub = None
 
@@ -44,20 +49,23 @@ class StanleyTracker:
         self.path_received = True
         # self.search_start_idx = 0
 
-    def odom_callback(self, msg):
+    def pose_callback(self, msg):  # odom_callback -> pose_callback
         if not self.path_received or self.path_np is None or len(self.path_np) == 0:
             return
 
-        self.x = msg.pose.pose.position.x
-        self.y = msg.pose.pose.position.y
-        orientation = msg.pose.pose.orientation
+        self.x = msg.pose.position.x
+        self.y = msg.pose.position.y
+        orientation = msg.pose.orientation
         _, _, self.yaw = tf.transformations.euler_from_quaternion([
             orientation.x, orientation.y, orientation.z, orientation.w
         ])
 
     def process_tracking(self):
-        if self.x and self.y is None:
+        if self.x is None or self.y is None or self.yaw is None:
             return 
+
+        if self.path_np is None or len(self.path_np) == 0:
+            return
 
         lookahead_idx = self.find_lookahead_index(self.x, self.y, lookahead_distance=0.8)
         if lookahead_idx < self.search_start_idx:
@@ -148,5 +156,5 @@ class StanleyTracker:
 
 if __name__ == "__main__":
     rospy.init_node("stanley_tracker")
-    StanleyTracker()
-    rospy.spin()
+    StanleyTracker().run()
+
