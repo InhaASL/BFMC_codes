@@ -7,6 +7,7 @@ from nav_msgs.msg import Path
 from geometry_msgs.msg import PoseStamped
 from ackermann_msgs.msg import AckermannDriveStamped
 from visualization_msgs.msg import Marker
+from nav_msgs.msg import Odometry
 
 class StanleyTracker:
     def __init__(self):
