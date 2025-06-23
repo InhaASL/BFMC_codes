@@ -12,7 +12,7 @@ class LaneFollow:
     def __init__(self):
         self.br = CvBridge()
         # self.image_sub = rospy.Subscriber('/oak/rgb/image_rect', Image, self.image_callback)
-        self.image_sub = rospy.Subscriber('/oak/rgb/image_rect_color/compressed', CompressedImage, self.image_callback)
+        self.image_sub = rospy.Subscriber('/d455/color/image_raw/compressed', CompressedImage, self.image_callback)
         self.ack_pub = rospy.Publisher('/high_level/ackermann_cmd_mux/input/navigation', AckermannDriveStamped, queue_size=10)
         self.debug_publisher1 = rospy.Publisher('/debugging_image1', Image, queue_size=10)
         self.debug_publisher2 = rospy.Publisher('/debugging_image2', Image, queue_size=10)
@@ -55,8 +55,8 @@ class LaneFollow:
         self.dst_points = np.float32([
             [self.roi_x_l, self.roi_y_l],
             [self.roi_x_h, self.roi_y_l],
-            [self.roi_x_l + 350, self.roi_y_h],
-            [self.roi_x_h - 350, self.roi_y_h]
+            [self.roi_x_l + 500, self.roi_y_h],
+            [self.roi_x_h - 500, self.roi_y_h]
         ])
 
         self.matrix = cv2.getPerspectiveTransform(self.src_points, self.dst_points)
